@@ -11,7 +11,8 @@ libraryDependencies ++= List(
   "org.scalatest" %% "scalatest" % "2.2.4" % "test",
   "net.databinder.dispatch" %% "dispatch-core" % "0.11.2",
   "net.ruippeixotog" %% "scala-scraper" % "1.0.0",
-  "org.jsoup" % "jsoup" % "1.9.2"
+  "org.jsoup" % "jsoup" % "1.9.2",
+  "org.scala-lang.modules" %% "scala-xml" % "1.0.5"
 )
 
 
