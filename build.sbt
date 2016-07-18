@@ -1,6 +1,6 @@
 name := """goodreads-library-value-calculator"""
 
-mainClass in Compile := Some("HelloSlick")
+mainClass in Compile := Some("GoodreadsLibraryValueCalculator")
 
 scalaVersion := "2.11.8"
 
@@ -12,8 +12,11 @@ libraryDependencies ++= List(
   "net.databinder.dispatch" %% "dispatch-core" % "0.11.2",
   "net.ruippeixotog" %% "scala-scraper" % "1.0.0",
   "org.jsoup" % "jsoup" % "1.9.2",
-  "org.scala-lang.modules" %% "scala-xml" % "1.0.4"
+  "org.scala-lang.modules" %% "scala-xml" % "1.0.4",
+  "jline" % "jline" % "2.12.1",
+  "com.lihaoyi" % "ammonite-repl" % "0.6.2" % "test" cross CrossVersion.full
 )
 
+initialCommands in (Test, console) := """ammonite.repl.Main().run()"""
 
 fork in run := true
