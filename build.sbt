@@ -14,9 +14,9 @@ libraryDependencies ++= List(
   "org.jsoup" % "jsoup" % "1.9.2",
   "org.scala-lang.modules" %% "scala-xml" % "1.0.4",
   "jline" % "jline" % "2.12.1",
-  "com.lihaoyi" % "ammonite-repl" % "0.6.2" % "test" cross CrossVersion.full
+  "com.lihaoyi" % "ammonite" % "0.7.7" % "test" cross CrossVersion.full
 )
 
-initialCommands in (Test, console) := """ammonite.repl.Main().run()"""
+initialCommands in (Test, console) := """ammonite.Main().run()"""
 
 fork in run := true
