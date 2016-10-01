@@ -1,6 +1,5 @@
 import com.typesafe.config._
 import scala.concurrent.{Future, Await}
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.Duration
 import slick.backend.DatabasePublisher
 import slick.driver.H2Driver.api._
@@ -21,8 +20,7 @@ object GoodreadsLibraryValueCalculator extends App {
     * @param per_page
     * @return
     */
-  def getPage(page: String, per_page: String = "100") = {
-    // TODO: Cache results using H2?
+  def getReviews(page: String = "1", per_page: String = "100") = {
     val reviewService = baseReviewService <<? Map(
       "v" -> "2",
       "id" -> goodreadsConfig.getString("userId"),
@@ -31,10 +29,23 @@ object GoodreadsLibraryValueCalculator extends App {
       "page" -> page,
       "per_page" -> per_page
     )
-    val reviewXMLString = Http(reviewService OK as.String)
-    val reviewXML = XML.loadString(reviewXMLString())
-    reviewXML \\ "reviews"
+    val reviewServiceResponse = Http(reviewService OK as.String)
+    val reviewXML = for (reviewXMLString <- reviewServiceResponse) yield XML.loadString(reviewXMLString)
+    for (xml <- reviewXML) yield xml \\ "reviews"
   }
+
+  /**
+    * Retrieve the first page of reviews and use it to start retreiving all
+    * remaining pages in parallel.
+    */
+ val collectedReviews = for (firstReviewPage <- getReviews()) yield {
+    val totalReviews = (firstReviewPage \@ "total").toInt
+    val pageEnd = (firstReviewPage \@ "end").toInt
+    val totalPages = (totalReviews / pageEnd.toDouble).ceil.toInt
+    val remainingReviews = for (pageNumber <- 2 to totalPages) yield getReviews(pageNumber.toString)
+    Future.successful(firstReviewPage) +: remainingReviews
+  }
+
 
   try {
     // Generate Http Response table
@@ -42,19 +53,7 @@ object GoodreadsLibraryValueCalculator extends App {
     val action: Future[Unit] = db.run(DBIO.seq(httpResponse.schema.create))
     Await.result(action, Duration.Inf)
 
-    // TODO: Retrieve books
-    val reviewService = baseReviewService <<? Map(
-      "v" -> "2",
-      "id" -> goodreadsConfig.getString("userId"),
-      "shelf" -> goodreadsConfig.getString("shelf"),
-      "key" -> goodreadsConfig.getString("key"),
-      "page" -> "1",
-      "per_page" -> "100"
-    )
-    val reviewXMLString = Http(reviewService OK as.String)
-    val reviewXML = XML.loadString(reviewXMLString())
-    val reviews = reviewXML \\ "reviews"
-
+    // TODO: Work with collectedReviews
 
   } finally db.close
 
