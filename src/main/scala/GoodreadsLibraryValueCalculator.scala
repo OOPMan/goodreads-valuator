@@ -37,14 +37,26 @@ object GoodreadsLibraryValueCalculator extends App {
   /**
     * Retrieve the first page of reviews and use it to start retreiving all
     * remaining pages in parallel.
+    *
+    * TODO: When Scala 2.12 becomes available this can be flattened for cleaner usage patterns
     */
- val collectedReviews = for (firstReviewPage <- getReviews()) yield {
+  val collectedReviews = for (firstReviewPage <- getReviews()) yield {
     val totalReviews = (firstReviewPage \@ "total").toInt
     val pageEnd = (firstReviewPage \@ "end").toInt
     val totalPages = (totalReviews / pageEnd.toDouble).ceil.toInt
     val remainingReviews = for (pageNumber <- 2 to totalPages) yield getReviews(pageNumber.toString)
-    Future.successful(firstReviewPage) +: remainingReviews
+    Future.sequence(Future.successful(firstReviewPage) +: remainingReviews)
   }
+
+  /**
+    * This is a little hairy but it works, producing a Future for a
+    * IndexedSeq of scala.xml.Node objects each of which is a GoodReads
+    * isbn13 item.
+    */
+  val collectedISBNs = for {
+    reviewsPageFuture <- collectedReviews
+    reviewsPage <- reviewsPageFuture
+  } yield (for (reviews <- reviewsPage) yield reviews \\ "review" \\ "isbn13").flatten
 
 
   try {
