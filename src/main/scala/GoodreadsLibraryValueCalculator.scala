@@ -58,6 +58,15 @@ object GoodreadsLibraryValueCalculator extends App {
     reviewsPage <- reviewsPageFuture
   } yield (for (reviews <- reviewsPage) yield reviews \\ "review" \\ "isbn13").flatten
 
+  /**
+    * Group the ISBNs into chunks of 10. Each chunk of 10 will be processed in
+    * parallel before the next chunk of 10 is handled and so on until all the
+    * ISBNs have been processed
+    */
+  val groupedISBNs = for {
+    isbns <- collectedISBNs
+  } yield isbns.grouped(10)
+
 
   try {
     // Generate Http Response table
