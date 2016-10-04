@@ -1,16 +1,20 @@
 import com.typesafe.config._
-import scala.concurrent.{Future, Await}
+
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.Duration
 import slick.backend.DatabasePublisher
 import slick.driver.H2Driver.api._
-import dispatch._, Defaults._
-import scala.xml.XML
+import dispatch._
+import Defaults._
+
+import scala.xml.{Node, XML}
 
 object GoodreadsLibraryValueCalculator extends App {
 
   val config = ConfigFactory.load()
   val goodreadsConfig = config.getConfig("goodreads")
   val baseReviewService = url("https://www.goodreads.com/review/list")
+  val basePriceService = url("http://www.loot.co.za/search")
   val db = Database.forConfig("h2disk1")
 
   /**
@@ -35,18 +39,28 @@ object GoodreadsLibraryValueCalculator extends App {
   }
 
   /**
+    *
+    * @param per_page
+    * @return
+    */
+  def getAllReviews(per_page: String = "100") = {
+    val futures = for (firstReviewPage <- getReviews(per_page = per_page)) yield {
+      val totalReviews = (firstReviewPage \@ "total").toInt
+      val pageEnd = (firstReviewPage \@ "end").toInt
+      val totalPages = (totalReviews / pageEnd.toDouble).ceil.toInt
+      val remainingReviews = for (pageNumber <- 2 to totalPages) yield getReviews(pageNumber.toString)
+      Future.sequence(Future.successful(firstReviewPage) +: remainingReviews)
+    }
+    futures.flatMap(identity)
+  }
+
+  /**
     * Retrieve the first page of reviews and use it to start retreiving all
     * remaining pages in parallel.
     *
-    * TODO: When Scala 2.12 becomes available this can be flattened for cleaner usage patterns
+    * TODO: Allow for page size to be customizable
     */
-  val collectedReviews = for (firstReviewPage <- getReviews()) yield {
-    val totalReviews = (firstReviewPage \@ "total").toInt
-    val pageEnd = (firstReviewPage \@ "end").toInt
-    val totalPages = (totalReviews / pageEnd.toDouble).ceil.toInt
-    val remainingReviews = for (pageNumber <- 2 to totalPages) yield getReviews(pageNumber.toString)
-    Future.sequence(Future.successful(firstReviewPage) +: remainingReviews)
-  }
+  val collectedReviews = getAllReviews()
 
   /**
     * This is a little hairy but it works, producing a Future for a
@@ -54,18 +68,50 @@ object GoodreadsLibraryValueCalculator extends App {
     * isbn13 item.
     */
   val collectedISBNs = for {
-    reviewsPageFuture <- collectedReviews
-    reviewsPage <- reviewsPageFuture
+    reviewsPage <- collectedReviews
   } yield (for (reviews <- reviewsPage) yield reviews \\ "review" \\ "isbn13").flatten
 
   /**
     * Group the ISBNs into chunks of 10. Each chunk of 10 will be processed in
     * parallel before the next chunk of 10 is handled and so on until all the
     * ISBNs have been processed
+    *
+    * TODO: Allow for chunk size to be customizable
     */
-  val groupedISBNs = for {
-    isbns <- collectedISBNs
-  } yield isbns.grouped(10)
+  val groupedISBNs = collectedISBNs.map(_.grouped(10).toList)
+
+  /**
+    *
+    * @param isbn13
+    * @return
+    */
+  def getPriceForISBN(isbn13: Node) = {
+    val priceService = basePriceService <<? Map(
+      "offset" -> "0",
+      "cat" -> "b",
+      "terms" -> isbn13.text
+    )
+    val priceServiceResponse = Http(priceService OK as.String)
+    // TODO: Extract price from response
+    priceServiceResponse
+  }
+
+  /**
+    *
+    * @param chunks
+    * @return
+    */
+  def getPricesForISBNChunks(chunks: List[IndexedSeq[Node]]): Future[IndexedSeq[String]] = {
+    chunks match {
+      case Nil => Future.successful(IndexedSeq[String]())
+      case chunk :: remainingChunks => for {
+        batch <- Future.traverse(chunk) { node => getPriceForISBN(node) }
+        nextBatch <- getPricesForISBNChunks(remainingChunks)
+      } yield batch ++ nextBatch
+    }
+  }
+
+  val prices = groupedISBNs.map(getPricesForISBNChunks).flatMap(identity)
 
 
   try {
