@@ -6,15 +6,21 @@ import slick.backend.DatabasePublisher
 import slick.driver.H2Driver.api._
 import dispatch._
 import Defaults._
+import net.ruippeixotog.scalascraper.browser.JsoupBrowser
+import net.ruippeixotog.scalascraper.dsl.DSL._
+import net.ruippeixotog.scalascraper.dsl.DSL.Extract._
+import net.ruippeixotog.scalascraper.dsl.DSL.Parse._
+import org.joda.money.Money
 
+import scala.util.Success
 import scala.xml.{Node, XML}
 
 object GoodreadsLibraryValueCalculator extends App {
 
   val config = ConfigFactory.load()
+  val browser = JsoupBrowser()
   val goodreadsConfig = config.getConfig("goodreads")
   val baseReviewService = url("https://www.goodreads.com/review/list")
-  val basePriceService = url("http://www.loot.co.za/search")
   val db = Database.forConfig("h2disk1")
 
   /**
@@ -81,38 +87,99 @@ object GoodreadsLibraryValueCalculator extends App {
   val groupedISBNs = collectedISBNs.map(_.grouped(10).toList)
 
   /**
+    * TODO: Document
     *
     * @param isbn13
     * @return
     */
-  def getPriceForISBN(isbn13: Node) = {
-    val priceService = basePriceService <<? Map(
+  def getPriceForISBNFromLoot(isbn13: Node) = {
+    val priceService = url("http://www.loot.co.za/search") <<? Map(
       "offset" -> "0",
       "cat" -> "b",
       "terms" -> isbn13.text
     )
     val priceServiceResponse = Http(priceService OK as.String)
-    // TODO: Extract price from response
-    priceServiceResponse
+    val html = priceServiceResponse.map(browser.parseString)
+    val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
+    for (option <- potentialPrice) yield option match {
+      case Some(price) => Some(Money.parse("ZA" + price))
+      case None => None
+    }
   }
 
   /**
+    * TODO: Implement this
+    *
+    * @param isbn13
+    * @return
+    */
+  def getPriceForISBNFromAmazon(isbn13: Node) = {
+    val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
+      "url" -> "search-alias=stripbooks",
+      "field-keywords" -> isbn13.text
+    )
+    val priceServiceResponse = Http(priceService OK as.String)
+    val html = priceServiceResponse.map(browser.parseString)
+    // TODO: Correct for Amazon strucutre
+    val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
+      for (option <- potentialPrice) yield option match {
+      case Some(price) => Some(Money.parse("ZA" + price))
+      case None => None
+    }
+  }
+
+  val priceProviders: List[(Node) => Future[Option[Money]]] = List(
+    getPriceForISBNFromLoot, getPriceForISBNFromAmazon)
+
+  /**
+    * TODO: Document
+    *
+    * @param isbn13
+    * @param providers
+    * @return
+    */
+  def getPriceForISBNFromProviders(isbn13: Node,
+                                   providers: List[(Node) => Future[Option[Money]]]): Future[Option[Money]] = {
+    providers match {
+      case Nil => throw new Exception("Could not obtain a price")
+      case provider :: remainingProviders =>
+        provider(isbn13) recoverWith {
+          case ex => getPriceForISBNFromProviders(isbn13, remainingProviders)
+        }
+    }
+  }
+
+  /**
+    * Transforms an Option[Money] for a given Node to an Either[Money, Node]
+    *
+    * @param isbn13
+    * @return
+    */
+  def getPriceForISBN(isbn13: Node) = getPriceForISBNFromProviders(isbn13, priceProviders) map {
+    case Some(money) => Left(money)
+    case None => Right(isbn13)
+  }
+
+  /**
+    * TODO: Document
     *
     * @param chunks
     * @return
     */
-  def getPricesForISBNChunks(chunks: List[IndexedSeq[Node]]): Future[IndexedSeq[String]] = {
+  def getPricesForISBNChunks(chunks: List[IndexedSeq[Node]]): Future[IndexedSeq[Either[Money, Node]]] = {
+
+
     chunks match {
-      case Nil => Future.successful(IndexedSeq[String]())
-      case chunk :: remainingChunks => for {
-        batch <- Future.traverse(chunk) { node => getPriceForISBN(node) }
-        nextBatch <- getPricesForISBNChunks(remainingChunks)
-      } yield batch ++ nextBatch
+      case Nil => Future.successful(IndexedSeq[Either[Money, Node]]())
+      case chunk :: remainingChunks =>
+        for {
+          batch <- Future.traverse(chunk)(getPriceForISBN)
+          nextBatch <- getPricesForISBNChunks(remainingChunks)
+        } yield batch ++ nextBatch
     }
   }
 
   val prices = groupedISBNs.map(getPricesForISBNChunks).flatMap(identity)
-
 
   try {
     // Generate Http Response table
