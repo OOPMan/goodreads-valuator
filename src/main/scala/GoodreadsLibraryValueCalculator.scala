@@ -64,18 +64,24 @@ object GoodreadsLibraryValueCalculator extends App {
     * Retrieve the first page of reviews and use it to start retreiving all
     * remaining pages in parallel.
     *
-    * TODO: Allow for page size to be customizable
     */
-  val collectedReviews = getAllReviews()
+  val collectedReviews = getAllReviews(goodreadsConfig.getString("page_size"))
 
-  /**
-    * This is a little hairy but it works, producing a Future for a
-    * IndexedSeq of scala.xml.Node objects each of which is a GoodReads
-    * isbn13 item.
-    */
-  val collectedISBNs = for {
-    reviewsPage <- collectedReviews
-  } yield (for (reviews <- reviewsPage) yield reviews \\ "review" \\ "isbn13").flatten
+  val reviewPages = getAllReviews()
+  // TODO: Find a way to clean this up
+  val reviewNodes = for (reviewPage <- reviewPages) yield (for (reviews <- reviewPage) yield reviews \\ "review").flatten
+
+  // TODO: Find a way to clean this up
+  val isbnNodes = for (review <- reviewNodes) yield (for (reviewNode <- review) yield reviewNode \\ "isbn13").flatten
+  val collectedISBNs = isbnNodes.map { i => i.map { j => j.text }}
+  // TODO: Find a way to clean this up
+  val titleNodes = for (review <- reviewNodes) yield (for (reviewNode <- review) yield reviewNode \\ "title").flatten
+  val collectedTitles = titleNodes.map { i => i.map { j => j.text }}
+
+  val isbnToTitle = for {
+    isbn <- collectedISBNs
+    title <- collectedTitles
+  } yield Map(isbn zip title: _*)
 
   /**
     * Group the ISBNs into chunks of 10. Each chunk of 10 will be processed in
@@ -92,12 +98,14 @@ object GoodreadsLibraryValueCalculator extends App {
     * @param isbn13
     * @return
     */
-  def getPriceForISBNFromLoot(isbn13: Node) = {
+  def getPriceForISBNFromLoot(isbn13: String) = {
+    // TODO: Cache response?
     val priceService = url("http://www.loot.co.za/search") <<? Map(
       "offset" -> "0",
       "cat" -> "b",
-      "terms" -> isbn13.text
+      "terms" -> isbn13
     )
+    // TODO: Recover failures to an empty document
     val priceServiceResponse = Http(priceService OK as.String)
     val html = priceServiceResponse.map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
@@ -113,11 +121,13 @@ object GoodreadsLibraryValueCalculator extends App {
     * @param isbn13
     * @return
     */
-  def getPriceForISBNFromAmazon(isbn13: Node) = {
+  def getPriceForISBNFromAmazon(isbn13: String) = {
+    // TODO: Cache response?
     val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
       "url" -> "search-alias=stripbooks",
-      "field-keywords" -> isbn13.text
+      "field-keywords" -> isbn13
     )
+    // TODO: Recover failures to an empty document
     val priceServiceResponse = Http(priceService OK as.String)
     val html = priceServiceResponse.map(browser.parseString)
     // TODO: Correct for Amazon strucutre
@@ -128,7 +138,7 @@ object GoodreadsLibraryValueCalculator extends App {
     }
   }
 
-  val priceProviders: List[(Node) => Future[Option[Money]]] = List(
+  val priceProviders: List[(String) => Future[Option[Money]]] = List(
     getPriceForISBNFromLoot, getPriceForISBNFromAmazon)
 
   /**
@@ -138,26 +148,15 @@ object GoodreadsLibraryValueCalculator extends App {
     * @param providers
     * @return
     */
-  def getPriceForISBNFromProviders(isbn13: Node,
-                                   providers: List[(Node) => Future[Option[Money]]]): Future[Option[Money]] = {
+  def getPriceForISBN(isbn13: String,
+                      providers: List[(String) => Future[Option[Money]]] = priceProviders): Future[Option[Money]] = {
     providers match {
       case Nil => throw new Exception("Could not obtain a price")
       case provider :: remainingProviders =>
         provider(isbn13) recoverWith {
-          case ex => getPriceForISBNFromProviders(isbn13, remainingProviders)
+          case ex => getPriceForISBN(isbn13, remainingProviders)
         }
     }
-  }
-
-  /**
-    * Transforms an Option[Money] for a given Node to an Either[Money, Node]
-    *
-    * @param isbn13
-    * @return
-    */
-  def getPriceForISBN(isbn13: Node) = getPriceForISBNFromProviders(isbn13, priceProviders) map {
-    case Some(money) => Left(money)
-    case None => Right(isbn13)
   }
 
   /**
@@ -166,20 +165,24 @@ object GoodreadsLibraryValueCalculator extends App {
     * @param chunks
     * @return
     */
-  def getPricesForISBNChunks(chunks: List[IndexedSeq[Node]]): Future[IndexedSeq[Either[Money, Node]]] = {
+  def getPricesForISBNChunks(chunks: List[IndexedSeq[String]]): Future[IndexedSeq[Option[Money]]] = {
 
 
     chunks match {
-      case Nil => Future.successful(IndexedSeq[Either[Money, Node]]())
+      case Nil => Future.successful(IndexedSeq[Option[Money]]())
       case chunk :: remainingChunks =>
         for {
-          batch <- Future.traverse(chunk)(getPriceForISBN)
+          batch <- Future.traverse(chunk)(isbn13 => getPriceForISBN(isbn13))
           nextBatch <- getPricesForISBNChunks(remainingChunks)
         } yield batch ++ nextBatch
     }
   }
 
   val prices = groupedISBNs.map(getPricesForISBNChunks).flatMap(identity)
+  val isbnsAndPrices = for {
+    a <- collectedISBNs
+    b <- prices
+  } yield a zip b
 
   try {
     // Generate Http Response table
