@@ -13,6 +13,7 @@ libraryDependencies ++= List(
   "net.ruippeixotog" %% "scala-scraper" % "1.0.0",
   "org.jsoup" % "jsoup" % "1.9.2",
   "org.scala-lang.modules" %% "scala-xml" % "1.0.4",
+  "org.joda" % "joda-money" % "0.11",
   "jline" % "jline" % "2.12.1",
   "com.lihaoyi" % "ammonite" % "0.7.7" % "test" cross CrossVersion.full
 )
