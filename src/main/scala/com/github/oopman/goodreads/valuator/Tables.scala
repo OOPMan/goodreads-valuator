@@ -1,3 +1,5 @@
+package com.github.oopman.goodreads.valuator
+
 import slick.driver.H2Driver.api._
 import slick.lifted.{ForeignKeyQuery, ProvenShape}
 
