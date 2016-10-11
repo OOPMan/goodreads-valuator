@@ -5,6 +5,7 @@ import scala.concurrent.{Await, Future}
 
 import com.typesafe.config._
 import dispatch._
+import dispatch.Defaults._
 import net.ruippeixotog.scalascraper.browser.JsoupBrowser
 import slick.driver.H2Driver.api._
 
@@ -55,6 +56,11 @@ object GoodreadsLibraryValueCalculator extends App {
     a <- collectedISBNs
     b <- prices
   } yield a zip b
+
+  val groupedISBNsAndPrices = isbnsAndPrices.map(_ groupBy {
+    case (_, Some(money)) => money.getCurrencyUnit.getCurrencyCode
+    case _ => ""
+  })
 
   try {
     // Generate Http Response table
