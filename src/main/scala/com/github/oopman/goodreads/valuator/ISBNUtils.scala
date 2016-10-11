@@ -89,16 +89,14 @@ object ISBNUtils {
   def getPriceForISBNFromAmazon(isbn13: String) = {
     // TODO: Cache response?
     val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
-      "url" -> "search-alias=stripbooks",
       "field-keywords" -> isbn13
     )
     // TODO: Recover failures to an empty document
-    val priceServiceResponse = Http(priceService OK as.String)
+    val priceServiceResponse = Http.configure(_ setFollowRedirects true)(priceService OK as.String)
     val html = priceServiceResponse.map(browser.parseString)
-    // TODO: Correct for Amazon structure
-    val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
+    val potentialPrice = for (document <- html) yield document >?> text("#result_0 .s-item-container span.a-color-price")
       for (option <- potentialPrice) yield option match {
-      case Some(price) => Some(Money.parse("ZA" + price))
+      case Some(price) => Some(Money.parse("USD" + price.tail))
       case None => None
     }
   }
