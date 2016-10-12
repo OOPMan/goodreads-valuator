@@ -1,6 +1,7 @@
 package com.github.oopman.goodreads.valuator
 
 import com.typesafe.config._
+import com.typesafe.scalalogging.Logger
 import dispatch.Defaults._
 import dispatch._
 import net.ruippeixotog.scalascraper.browser.JsoupBrowser
@@ -9,12 +10,14 @@ import net.ruippeixotog.scalascraper.dsl.DSL._
 import org.joda.money.Money
 
 import scala.concurrent.Future
+import scala.util.{Failure, Success}
 import scala.xml.XML
 
 /**
   * Created by adamj on 2016/10/10.
   */
 object ISBNUtils {
+  val logger = Logger("com.github.oopman.goodreads.valuator.ISBNUntils")
   val config = ConfigFactory.load()
   val browser = JsoupBrowser()
   val empty = Future.successful("")
@@ -37,7 +40,11 @@ object ISBNUtils {
       "page" -> page,
       "per_page" -> per_page
     )
-    val reviewServiceResponse = Http(reviewService OK as.String)
+    logger.info(s"Retrieving page $page of GoodReads Reviews")
+    val reviewServiceResponse = Http(reviewService OK as.String) andThen {
+      case Success(_) => logger.info(s"Retrieved page $page")
+      case Failure(_) => logger.error(s"Failed to retrieve page $page")
+    }
     val reviewXML = for (reviewXMLString <- reviewServiceResponse) yield XML.loadString(reviewXMLString)
     for (xml <- reviewXML) yield xml \\ "reviews"
   }
@@ -52,8 +59,13 @@ object ISBNUtils {
       val totalReviews = (firstReviewPage \@ "total").toInt
       val pageEnd = (firstReviewPage \@ "end").toInt
       val totalPages = (totalReviews / pageEnd.toDouble).ceil.toInt
+      logger.info(s"Total reviews: $totalReviews")
+      logger.info(s"Retrieving ${totalPages - 1} additional pages")
       val remainingReviews = for (pageNumber <- 2 to totalPages) yield getReviews(pageNumber.toString)
-      Future.sequence(Future.successful(firstReviewPage) +: remainingReviews)
+      Future.sequence(Future.successful(firstReviewPage) +: remainingReviews).andThen {
+        case Success(_) => logger.info("Retrieved all remaining pages")
+        case Failure(_) => logger.error("Failed to retrieve some or all remaining pages")
+      }
     }
     futures.flatMap(identity)
   }
