@@ -17,6 +17,7 @@ import scala.xml.XML
 object ISBNUtils {
   val config = ConfigFactory.load()
   val browser = JsoupBrowser()
+  val empty = Future.successful("")
   val goodreadsConfig = config.getConfig("goodreads")
   val baseReviewService = url("https://www.goodreads.com/review/list")
 
@@ -70,12 +71,11 @@ object ISBNUtils {
       "cat" -> "b",
       "terms" -> isbn13
     )
-    // TODO: Recover failures to an empty document
-    val priceServiceResponse = Http(priceService OK as.String)
+    val priceServiceResponse = Http(priceService OK as.String).fallbackTo(empty)
     val html = priceServiceResponse.map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
     for (option <- potentialPrice) yield option match {
-      case Some(price) => Some(Money.parse("ZA" + price))
+      case Some(price) => Some(Money.parse("ZAR" + price.tail))
       case None => None
     }
   }
@@ -91,8 +91,7 @@ object ISBNUtils {
     val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
       "field-keywords" -> isbn13
     )
-    // TODO: Recover failures to an empty document
-    val priceServiceResponse = Http.configure(_ setFollowRedirects true)(priceService OK as.String)
+    val priceServiceResponse = Http.configure(_ setFollowRedirects true)(priceService OK as.String).fallbackTo(empty)
     val html = priceServiceResponse.map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("#result_0 .s-item-container span.a-color-price")
       for (option <- potentialPrice) yield option match {
