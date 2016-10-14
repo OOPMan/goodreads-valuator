@@ -8,10 +8,18 @@
         </encoder>
     </appender>
 
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>goodreads-valuator.log</file>
+        <encoder>
+            <pattern>[%file:%line] %d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
     <root level="debug">
         <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
     </root>
 
-    <logger name="com.github.oopman.goodreads.valuator.ISBNUntils" level="info" />
+    <logger name="com.github.oopman.goodreads.valuator" level="info" />
     <logger name="com.ning.http.client" level="error" />
 </configuration>
