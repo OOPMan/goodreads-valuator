@@ -83,16 +83,16 @@ object ISBNUtils {
       "cat" -> "b",
       "terms" -> isbn13
     )
-    logger.info(s"Attempting to load $isbn price from Loot")
+    logger.info(s"Attempting to load $isbn13 price from Loot")
     val priceServiceResponse = Http(priceService OK as.String).fallbackTo(empty)
     val html = priceServiceResponse.map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
     for (option <- potentialPrice) yield option match {
       case Some(price) =>
-        logger.info(s"Loaded price for $isbn from Loot")
+        logger.info(s"Loaded price for $isbn13 from Loot")
         Some(Money.parse("ZAR" + price.tail))
       case None =>
-        logger.warn(s"Failed to load price for $isbn from Loot")
+        logger.warn(s"Failed to load price for $isbn13 from Loot")
         None
     }
   }
@@ -108,16 +108,16 @@ object ISBNUtils {
     val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
       "field-keywords" -> isbn13
     )
-    logger.info(s"Attempting to load $isbn price from Amazon")
+    logger.info(s"Attempting to load $isbn13 price from Amazon")
     val priceServiceResponse = Http.configure(_ setFollowRedirects true)(priceService OK as.String)
     val html = priceServiceResponse.fallbackTo(empty).map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("#result_0 .s-item-container span.a-color-price")
       for (option <- potentialPrice) yield option match {
       case Some(price) =>
-        logger.info(s"Loaded price for $isbn from Amazon")
+        logger.info(s"Loaded price for $isbn13 from Amazon")
         Some(Money.parse("USD" + price.tail))
       case None =>
-        logger.warn(s"Failed to load price for $isbn from Amazon")
+        logger.warn(s"Failed to load price for $isbn13 from Amazon")
         None
     }
   }
@@ -136,7 +136,7 @@ object ISBNUtils {
                       providers: List[(String) => Future[Option[Money]]] = priceProviders): Future[Option[Money]] = {
     providers match {
       case Nil =>
-        logger.error(s"Failed to load a price for $isbn from available Providers")
+        logger.error(s"Failed to load a price for $isbn13 from available Providers")
         throw new Exception("Could not obtain a price")
       case provider :: remainingProviders =>
         provider(isbn13) recoverWith {
