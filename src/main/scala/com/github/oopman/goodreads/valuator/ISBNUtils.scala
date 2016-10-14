@@ -83,17 +83,22 @@ object ISBNUtils {
       "cat" -> "b",
       "terms" -> isbn13
     )
+    logger.info(s"Attempting to load $isbn price from Loot")
     val priceServiceResponse = Http(priceService OK as.String).fallbackTo(empty)
     val html = priceServiceResponse.map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
     for (option <- potentialPrice) yield option match {
-      case Some(price) => Some(Money.parse("ZAR" + price.tail))
-      case None => None
+      case Some(price) =>
+        logger.info(s"Loaded price for $isbn from Loot")
+        Some(Money.parse("ZAR" + price.tail))
+      case None =>
+        logger.warn(s"Failed to load price for $isbn from Loot")
+        None
     }
   }
 
   /**
-    * TODO: Implement this
+    * TODO: Document
     *
     * @param isbn13
     * @return
@@ -103,12 +108,17 @@ object ISBNUtils {
     val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
       "field-keywords" -> isbn13
     )
-    val priceServiceResponse = Http.configure(_ setFollowRedirects true)(priceService OK as.String).fallbackTo(empty)
-    val html = priceServiceResponse.map(browser.parseString)
+    logger.info(s"Attempting to load $isbn price from Amazon")
+    val priceServiceResponse = Http.configure(_ setFollowRedirects true)(priceService OK as.String)
+    val html = priceServiceResponse.fallbackTo(empty).map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("#result_0 .s-item-container span.a-color-price")
       for (option <- potentialPrice) yield option match {
-      case Some(price) => Some(Money.parse("USD" + price.tail))
-      case None => None
+      case Some(price) =>
+        logger.info(s"Loaded price for $isbn from Amazon")
+        Some(Money.parse("USD" + price.tail))
+      case None =>
+        logger.warn(s"Failed to load price for $isbn from Amazon")
+        None
     }
   }
 
@@ -125,7 +135,9 @@ object ISBNUtils {
   def getPriceForISBN(isbn13: String,
                       providers: List[(String) => Future[Option[Money]]] = priceProviders): Future[Option[Money]] = {
     providers match {
-      case Nil => throw new Exception("Could not obtain a price")
+      case Nil =>
+        logger.error(s"Failed to load a price for $isbn from available Providers")
+        throw new Exception("Could not obtain a price")
       case provider :: remainingProviders =>
         provider(isbn13) recoverWith {
           case ex => getPriceForISBN(isbn13, remainingProviders)
@@ -140,13 +152,17 @@ object ISBNUtils {
     * @return
     */
   def getPricesForISBNChunks(chunks: List[IndexedSeq[String]]): Future[IndexedSeq[Option[Money]]] = {
-
-
     chunks match {
-      case Nil => Future.successful(IndexedSeq[Option[Money]]())
+      case Nil =>
+        logger.info("Done processing chunks")
+        Future.successful(IndexedSeq[Option[Money]]())
       case chunk :: remainingChunks =>
+        logger.info(s"Processing chunk of ${chunk.length} ISBNs. ${remainingChunks.length} chunks left to process")
         for {
-          batch <- Future.traverse(chunk)(isbn13 => getPriceForISBN(isbn13))
+          batch <- Future.traverse(chunk)(isbn13 => {
+            logger.info(s"Attempting to obtain price for $isbn13")
+            getPriceForISBN(isbn13)
+          })
           nextBatch <- getPricesForISBNChunks(remainingChunks)
         } yield batch ++ nextBatch
     }
