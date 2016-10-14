@@ -93,7 +93,7 @@ object ISBNUtils {
         Some(Money.parse("ZAR" + price.tail))
       case None =>
         logger.warn(s"Failed to load price for $isbn13 from Loot")
-        None
+        throw new Exception("Could not obtain a price")
     }
   }
 
@@ -118,7 +118,7 @@ object ISBNUtils {
         Some(Money.parse("USD" + price.tail))
       case None =>
         logger.warn(s"Failed to load price for $isbn13 from Amazon")
-        None
+        throw new Exception("Could not obtain a price")
     }
   }
 
@@ -137,7 +137,7 @@ object ISBNUtils {
     providers match {
       case Nil =>
         logger.error(s"Failed to load a price for $isbn13 from available Providers")
-        throw new Exception("Could not obtain a price")
+        Future.successful(None)
       case provider :: remainingProviders =>
         provider(isbn13) recoverWith {
           case ex => getPriceForISBN(isbn13, remainingProviders)
