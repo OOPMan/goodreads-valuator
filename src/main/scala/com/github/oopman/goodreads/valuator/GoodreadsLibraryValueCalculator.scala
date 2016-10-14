@@ -62,18 +62,19 @@ object GoodreadsLibraryValueCalculator extends App {
     case _ => ""
   })
 
-  // TODO: Produce a Seq of ISBNs with no pricing information available
+  val ISBNsWithNoPrice = currencyToISBNsAndPrices.map(_.mapValues(_.filter(_._2.isEmpty).map(_._1))).map(_.values.flatten.mkString(", "))
+
   val currencyToSummedPrices = currencyToISBNsAndPrices.map(_.map {
     case (key, value) => (key, value.flatMap(_._2).reduce(_.plus(_)))
   })
 
-  for (m <- currencyToSummedPrices) {
+  for (pricing <- currencyToSummedPrices; isbns <- ISBNsWithNoPrice) {
     logger.info("Pricing amounts")
-    for ((currency, amount) <- m) {
+    for ((currency, amount) <- pricing) {
       logger.info(s"$currency $amount")
     }
+    logger.info(s"ISBNs with no price: $isbns")
   }
-
 
   /*
   try {
