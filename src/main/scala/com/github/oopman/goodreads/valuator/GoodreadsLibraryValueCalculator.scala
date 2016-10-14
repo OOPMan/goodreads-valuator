@@ -57,11 +57,25 @@ object GoodreadsLibraryValueCalculator extends App {
     b <- prices
   } yield a zip b
 
-  val groupedISBNsAndPrices = isbnsAndPrices.map(_ groupBy {
+  val currencyToISBNsAndPrices = isbnsAndPrices.map(_ groupBy {
     case (_, Some(money)) => money.getCurrencyUnit.getCurrencyCode
     case _ => ""
   })
 
+  // TODO: Produce a Seq of ISBNs with no pricing information available
+  val currencyToSummedPrices = currencyToISBNsAndPrices.map(_.map {
+    case (key, value) => (key, value.flatMap(_._2).reduce(_.plus(_)))
+  })
+
+  for (m <- currencyToSummedPrices) {
+    logger.info("Pricing amounts")
+    for ((currency, amount) <- m) {
+      logger.info(s"$currency $amount")
+    }
+  }
+
+
+  /*
   try {
     // Generate Http Response table
     val httpResponse = TableQuery[HttpResponse]
@@ -71,5 +85,5 @@ object GoodreadsLibraryValueCalculator extends App {
     // TODO: Work with collectedReviews
 
   } finally db.close
-
+  */
 }
