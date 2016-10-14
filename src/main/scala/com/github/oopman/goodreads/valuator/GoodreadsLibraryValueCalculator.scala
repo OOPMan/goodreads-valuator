@@ -9,6 +9,7 @@ import net.ruippeixotog.scalascraper.browser.JsoupBrowser
 import slick.driver.H2Driver.api._
 import com.github.oopman.goodreads.valuator.ISBNUtils._
 import com.typesafe.scalalogging.Logger
+import org.joda.money.{CurrencyUnit, Money}
 
 object GoodreadsLibraryValueCalculator extends App {
 
@@ -19,14 +20,7 @@ object GoodreadsLibraryValueCalculator extends App {
   val baseReviewService = url("https://www.goodreads.com/review/list")
   val db = Database.forConfig("h2disk1")
 
-  /**
-    * Retrieve the first page of reviews and use it to start retreiving all
-    * remaining pages in parallel.
-    *
-    */
-  val collectedReviews = getAllReviews(goodreadsConfig.getString("page_size"))
-
-  val reviewPages = getAllReviews()
+  val reviewPages = getAllReviews(goodreadsConfig.getString("page_size"))
   // TODO: Find a way to clean this up
   val reviewNodes = for (reviewPage <- reviewPages) yield (for (reviews <- reviewPage) yield reviews \\ "review").flatten
 
@@ -55,27 +49,37 @@ object GoodreadsLibraryValueCalculator extends App {
   val isbnsAndPrices = for {
     a <- collectedISBNs
     b <- prices
-  } yield a zip b
+  } yield {
+    a zip b
+  }
 
+  /**
+    * Map of Currency -> Seq of (ISBN, Some(Money)) tuples
+    *
+    * Additionally, "" maps to Seq of (ISBN, None) tuples
+    */
   val currencyToISBNsAndPrices = isbnsAndPrices.map(_ groupBy {
     case (_, Some(money)) => money.getCurrencyUnit.getCurrencyCode
     case _ => ""
   })
 
-  val ISBNsWithNoPrice = currencyToISBNsAndPrices.map(_.mapValues(_.filter(_._2.isEmpty).map(_._1))).map(_.values.flatten.mkString(", "))
+  val ISBNsWithNoPrice = currencyToISBNsAndPrices.map(_.getOrElse("", IndexedSeq()).map(_._1).mkString(", "))
 
   val currencyToSummedPrices = currencyToISBNsAndPrices.map(_.map {
-    case (key, value) => (key, value.flatMap(_._2).reduce(_.plus(_)))
+    case ("", _) => ("", Money.zero(CurrencyUnit.USD))
+    case (key, value) =>
+      (key, value.flatMap(_._2).reduce(_.plus(_)))
   })
 
-  for (pricing <- currencyToSummedPrices; isbns <- ISBNsWithNoPrice) {
+  val output = for (pricing <- currencyToSummedPrices; isbns <- ISBNsWithNoPrice) yield {
     logger.info("Pricing amounts")
     for ((currency, amount) <- pricing) {
-      logger.info(s"$currency $amount")
+      if (currency != "") logger.info(s"$amount")
     }
     logger.info(s"ISBNs with no price: $isbns")
   }
 
+  // TODO: Find a way to stop!
   /*
   try {
     // Generate Http Response table
