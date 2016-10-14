@@ -2,17 +2,17 @@ package com.github.oopman.goodreads.valuator
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
-
 import com.typesafe.config._
 import dispatch._
 import dispatch.Defaults._
 import net.ruippeixotog.scalascraper.browser.JsoupBrowser
 import slick.driver.H2Driver.api._
-
 import com.github.oopman.goodreads.valuator.ISBNUtils._
+import com.typesafe.scalalogging.Logger
 
 object GoodreadsLibraryValueCalculator extends App {
 
+  val logger = Logger("com.github.oopman.goodreads.valuator.GoodreadsLibraryValueCalculator")
   val config = ConfigFactory.load()
   val browser = JsoupBrowser()
   val goodreadsConfig = config.getConfig("goodreads")
