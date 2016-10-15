@@ -20,6 +20,7 @@ object ISBNUtils {
   val logger = Logger("com.github.oopman.goodreads.valuator.ISBNUntils")
   val config = ConfigFactory.load()
   val browser = JsoupBrowser()
+  val client = Http.configure(_ setFollowRedirects true)
   val empty = Future.successful("")
   val goodreadsConfig = config.getConfig("goodreads")
   val baseReviewService = url("https://www.goodreads.com/review/list")
@@ -41,7 +42,7 @@ object ISBNUtils {
       "per_page" -> per_page
     )
     logger.info(s"Retrieving page $page of GoodReads Reviews")
-    val reviewServiceResponse = Http(reviewService OK as.String) andThen {
+    val reviewServiceResponse = client(reviewService OK as.String) andThen {
       case Success(_) => logger.info(s"Retrieved page $page")
       case Failure(_) => logger.error(s"Failed to retrieve page $page")
     }
@@ -84,7 +85,7 @@ object ISBNUtils {
       "terms" -> isbn13
     )
     logger.info(s"Attempting to load $isbn13 price from Loot")
-    val priceServiceResponse = Http(priceService OK as.String).fallbackTo(empty)
+    val priceServiceResponse = client(priceService OK as.String).fallbackTo(empty)
     val html = priceServiceResponse.map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
     for (option <- potentialPrice) yield option match {
@@ -109,7 +110,7 @@ object ISBNUtils {
       "field-keywords" -> isbn13
     )
     logger.info(s"Attempting to load $isbn13 price from Amazon")
-    val priceServiceResponse = Http.configure(_ setFollowRedirects true)(priceService OK as.String)
+    val priceServiceResponse = client(priceService OK as.String)
     val html = priceServiceResponse.fallbackTo(empty).map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("#result_0 .s-item-container span.a-color-price")
       for (option <- potentialPrice) yield option match {
