@@ -77,6 +77,7 @@ object GoodreadsLibraryValueCalculator extends App {
       if (currency != "") logger.info(s"$amount")
     }
     logger.info(s"ISBNs with no price: $isbns")
+    System.exit(0)
   }
 
   // TODO: Find a way to stop!
