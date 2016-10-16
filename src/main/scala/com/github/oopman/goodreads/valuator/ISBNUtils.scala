@@ -8,6 +8,7 @@ import net.ruippeixotog.scalascraper.browser.JsoupBrowser
 import net.ruippeixotog.scalascraper.dsl.DSL.Extract._
 import net.ruippeixotog.scalascraper.dsl.DSL._
 import org.joda.money.Money
+import slick.driver.H2Driver.api._
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
@@ -24,6 +25,9 @@ object ISBNUtils {
   val empty = Future.successful("")
   val goodreadsConfig = config.getConfig("goodreads")
   val baseReviewService = url("https://www.goodreads.com/review/list")
+  val db = Database.forConfig("h2disk1")
+  val httpResponse = TableQuery[HttpResponse]
+  val action: Future[Unit] = db.run(DBIO.seq(httpResponse.schema.create))
 
   /**
     * Retrieves a page of "reviews" from Goodreads
@@ -75,6 +79,29 @@ object ISBNUtils {
     * TODO: Document
     *
     * @param isbn13
+    * @param priceService
+    * @param priceServiceName
+    * @return
+    */
+  def getResponseFromCacheOrService(isbn13: String, priceService: Req, priceServiceName: String) = {
+    val query = db.run(httpResponse.filter(_.url === priceService.url).map(_.body).result)
+    query.map(_.toList).flatMap {
+      case Nil =>
+        logger.info(s"Attempting to load $isbn13 price from $priceServiceName")
+        val response = client(priceService OK as.String).fallbackTo(empty)
+        response.flatMap { body =>
+          db.run(httpResponse += (priceService.url, body)).map(insertResult => body)
+        }
+      case x :: xs =>
+        logger.info(s"Loaded $isbn13 from cache")
+        Future.successful(x)
+    }
+  }
+
+  /**
+    * TODO: Document
+    *
+    * @param isbn13
     * @return
     */
   def getPriceForISBNFromLoot(isbn13: String) = {
@@ -84,8 +111,7 @@ object ISBNUtils {
       "cat" -> "b",
       "terms" -> isbn13
     )
-    logger.info(s"Attempting to load $isbn13 price from Loot")
-    val priceServiceResponse = client(priceService OK as.String).fallbackTo(empty)
+    val priceServiceResponse = getResponseFromCacheOrService(isbn13, priceService, "Loot")
     val html = priceServiceResponse.map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
     for (option <- potentialPrice) yield option match {
@@ -109,8 +135,7 @@ object ISBNUtils {
     val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
       "field-keywords" -> isbn13
     )
-    logger.info(s"Attempting to load $isbn13 price from Amazon")
-    val priceServiceResponse = client(priceService OK as.String)
+    val priceServiceResponse = getResponseFromCacheOrService(isbn13, priceService, "Amazon")
     val html = priceServiceResponse.fallbackTo(empty).map(browser.parseString)
     val potentialPrice = for (document <- html) yield document >?> text("#result_0 .s-item-container span.a-color-price")
       for (option <- potentialPrice) yield option match {
@@ -140,6 +165,7 @@ object ISBNUtils {
         logger.error(s"Failed to load a price for $isbn13 from available Providers")
         Future.successful(None)
       case provider :: remainingProviders =>
+        // TODO: This seems to be failing as its always falling back to the Amazon result
         provider(isbn13) recoverWith {
           case ex => getPriceForISBN(isbn13, remainingProviders)
         }
