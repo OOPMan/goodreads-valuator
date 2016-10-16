@@ -22,4 +22,5 @@
 
     <logger name="com.github.oopman.goodreads.valuator" level="info" />
     <logger name="com.ning.http.client" level="error" />
+    <logger name="slick" level="error" />
 </configuration>
