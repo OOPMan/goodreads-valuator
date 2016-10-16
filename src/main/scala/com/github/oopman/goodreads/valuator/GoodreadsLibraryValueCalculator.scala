@@ -18,7 +18,7 @@ object GoodreadsLibraryValueCalculator extends App {
   val browser = JsoupBrowser()
   val goodreadsConfig = config.getConfig("goodreads")
   val baseReviewService = url("https://www.goodreads.com/review/list")
-  val db = Database.forConfig("h2disk1")
+//  val db = Database.forConfig("h2disk1")
 
   val reviewPages = getAllReviews(goodreadsConfig.getString("page_size"))
   // TODO: Find a way to clean this up
@@ -77,19 +77,7 @@ object GoodreadsLibraryValueCalculator extends App {
       if (currency != "") logger.info(s"$amount")
     }
     logger.info(s"ISBNs with no price: $isbns")
+    db.close()
     System.exit(0)
   }
-
-  // TODO: Find a way to stop!
-  /*
-  try {
-    // Generate Http Response table
-    val httpResponse = TableQuery[HttpResponse]
-    val action: Future[Unit] = db.run(DBIO.seq(httpResponse.schema.create))
-    Await.result(action, Duration.Inf)
-
-    // TODO: Work with collectedReviews
-
-  } finally db.close
-  */
 }
