@@ -8,6 +8,7 @@ import net.ruippeixotog.scalascraper.browser.JsoupBrowser
 import net.ruippeixotog.scalascraper.dsl.DSL.Extract._
 import net.ruippeixotog.scalascraper.dsl.DSL._
 import org.joda.money.Money
+import slick.lifted.TableQuery
 import slick.driver.H2Driver.api._
 
 import scala.concurrent.Future
@@ -17,33 +18,29 @@ import scala.xml.XML
 /**
   * Created by adamj on 2016/10/10.
   */
-object ISBNUtils {
+class ISBNUtils(db: Database) {
   val logger = Logger("com.github.oopman.goodreads.valuator.ISBNUntils")
-  val config = ConfigFactory.load()
   val browser = JsoupBrowser()
   val client = Http.configure(_ setFollowRedirects true)
   val empty = Future.successful("")
-  val goodreadsConfig = config.getConfig("goodreads")
   val baseReviewService = url("https://www.goodreads.com/review/list")
-  val db = Database.forConfig("h2disk1")
   val httpResponse = TableQuery[HttpResponse]
-  val action: Future[Unit] = db.run(DBIO.seq(httpResponse.schema.create))
 
   /**
     * Retrieves a page of "reviews" from Goodreads
     *
+    * @param config
     * @param page
-    * @param per_page
     * @return
     */
-  def getReviews(page: String = "1", per_page: String = "100") = {
+  def getReviews(config: Config, page: Int = 1) = {
     val reviewService = baseReviewService <<? Map(
       "v" -> "2",
-      "id" -> goodreadsConfig.getString("userId"),
-      "shelf" -> goodreadsConfig.getString("shelf"),
-      "key" -> goodreadsConfig.getString("key"),
-      "page" -> page,
-      "per_page" -> per_page
+      "id" -> config.gooodReadsUserId,
+      "shelf" -> config.shelf,
+      "key" -> config.goodreadsAPIKey,
+      "page" -> page.toString,
+      "per_page" -> config.pageSize
     )
     logger.info(s"Retrieving page $page of GoodReads Reviews")
     val reviewServiceResponse = client(reviewService OK as.String) andThen {
@@ -56,17 +53,17 @@ object ISBNUtils {
 
   /**
     *
-    * @param per_page
+    * @param config
     * @return
     */
-  def getAllReviews(per_page: String = "100") = {
-    val futures = for (firstReviewPage <- getReviews(per_page = per_page)) yield {
+  def getAllReviews(config: Config) = {
+    val futures = for (firstReviewPage <- getReviews(config)) yield {
       val totalReviews = (firstReviewPage \@ "total").toInt
       val pageEnd = (firstReviewPage \@ "end").toInt
       val totalPages = (totalReviews / pageEnd.toDouble).ceil.toInt
       logger.info(s"Total reviews: $totalReviews")
       logger.info(s"Retrieving ${totalPages - 1} additional pages")
-      val remainingReviews = for (pageNumber <- 2 to totalPages) yield getReviews(pageNumber.toString)
+      val remainingReviews = for (pageNumber <- 2 to totalPages) yield getReviews(config, pageNumber)
       Future.sequence(Future.successful(firstReviewPage) +: remainingReviews).andThen {
         case Success(_) => logger.info("Retrieved all remaining pages")
         case Failure(_) => logger.error("Failed to retrieve some or all remaining pages")
