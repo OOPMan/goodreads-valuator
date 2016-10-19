@@ -47,7 +47,7 @@ object GoodreadsLibraryValueCalculator extends App {
       *
       * TODO: Allow for chunk size to be customizable
       */
-    val groupedISBNs = collectedISBNs.map(_.grouped(10).toList)
+    val groupedISBNs = collectedISBNs.map(_.grouped(config.chunkSize).toList)
 
     val prices = groupedISBNs.map(isbnUtils.getPricesForISBNChunks).flatMap(identity)
     val isbnsAndPrices = for {
