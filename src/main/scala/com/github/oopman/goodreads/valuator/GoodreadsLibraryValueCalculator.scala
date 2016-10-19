@@ -5,6 +5,8 @@ import slick.driver.H2Driver.api._
 import com.typesafe.scalalogging.Logger
 import org.joda.money.{CurrencyUnit, Money}
 
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success}
 
 object GoodreadsLibraryValueCalculator extends App {
@@ -85,12 +87,19 @@ object GoodreadsLibraryValueCalculator extends App {
 
   Config.parser.parse(args, Config()) match {
     case Some(config) =>
-      val init = db.run(DBIO.seq(httpResponse.schema.create))
-      val process = init.andThen {
-        case Success(_) => valuate(config)
-        case Failure(_) => valuate(config)
+      logger.debug(s"GoodReads UserID: ${config.gooodReadsUserId}")
+      logger.debug(s"GoodReads API Key: ${config.goodreadsAPIKey}")
+      logger.debug(s"GoodReads Shelf: ${config.shelf}")
+      logger.debug(s"Page Size: ${config.pageSize}")
+      logger.info("Creating database tables")
+      val init = db.run(DBIO.seq(httpResponse.schema.create)) recover {
+        case _ =>
+          logger.warn("Failed to create database tables, probably because they already exist.")
+          Unit
       }
-      process onComplete { t =>
+      Await.result(init, Duration.Inf)
+      logger.info("Performing valuation")
+      valuate(config) onComplete { t =>
         db.close()
         System.exit(0)
       }
