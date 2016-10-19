@@ -13,7 +13,7 @@ import slick.driver.H2Driver.api._
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
-import scala.xml.XML
+import scala.xml.{NodeSeq, XML}
 
 /**
   * Created by adamj on 2016/10/10.
@@ -57,19 +57,36 @@ class ISBNUtils(db: Database) {
     * @return
     */
   def getAllReviews(config: Config) = {
-    val futures = for (firstReviewPage <- getReviews(config)) yield {
+
+    def getPages(pages: List[IndexedSeq[Int]]): Future[IndexedSeq[NodeSeq]] = {
+      pages match {
+        case Nil =>
+          logger.info("Done processing chunks")
+          Future.successful(IndexedSeq[NodeSeq]())
+        case chunk :: remainingChunks =>
+          logger.info(s"Processing chunk of ${chunk.length} review pages. ${remainingChunks.length} chunks left to process")
+          for {
+            batch <- Future.traverse(chunk)(pageNumber => {
+              logger.info(s"Attempting to load review page $pageNumber")
+              getReviews(config, pageNumber)
+            })
+            nextBatch <- getPages(remainingChunks)
+          } yield batch ++ nextBatch
+      }
+    }
+
+    getReviews(config).map({ firstReviewPage =>
       val totalReviews = (firstReviewPage \@ "total").toInt
       val pageEnd = (firstReviewPage \@ "end").toInt
       val totalPages = (totalReviews / pageEnd.toDouble).ceil.toInt
       logger.info(s"Total reviews: $totalReviews")
       logger.info(s"Retrieving ${totalPages - 1} additional pages")
-      val remainingReviews = for (pageNumber <- 2 to totalPages) yield getReviews(config, pageNumber)
-      Future.sequence(Future.successful(firstReviewPage) +: remainingReviews).andThen {
+      val pages = (2 to totalPages).grouped(config.chunkSize).toList
+      getPages(pages).map(firstReviewPage +: _).andThen {
         case Success(_) => logger.info("Retrieved all remaining pages")
         case Failure(_) => logger.error("Failed to retrieve some or all remaining pages")
       }
-    }
-    futures.flatMap(identity)
+    }).flatMap(identity)
   }
 
   /**
