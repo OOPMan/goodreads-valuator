@@ -3,7 +3,8 @@ package com.github.oopman.goodreads.valuator
 import scopt._
 
 case class Config(gooodReadsUserId: String = "", goodreadsAPIKey: String = "",
-                  shelf: String = "read", pageSize: String = "100")
+                  shelf: String = "read", pageSize: String = "100",
+                  chunkSize: Int = 10)
 
 object Config {
 
@@ -34,6 +35,12 @@ object Config {
       .text("Page size value for GoodReads API calls. Defaults to 100")
       .action { (value, config) =>
         config.copy(pageSize = value.toString)
+      }
+
+    opt[Int]('c', "chunkSize")
+      .text("Maximum number of HTTP requests to perform in parallel")
+      .action { (value, config) =>
+        config.copy(chunkSize = value)
       }
 
     help("help").text("Usage notes")
