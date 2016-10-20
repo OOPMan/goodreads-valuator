@@ -1,6 +1,9 @@
 name := """goodreads-valuator"""
 
 version := "1.0.0"
+maintainer := "Adam Jorgensen <adam.jorgensen.za@gmail.com>"
+packageSummary := "GoodReads Valuator"
+packageDescription := "A tool to valuate GoodReads Shelf contents"
 
 mainClass in Compile := Some("com.github.oopman.goodreads.valuator.GoodreadsLibraryValueCalculator")
 
