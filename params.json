@@ -1,0 +1,6 @@
+{
+  "name": "Goodreads-valuator",
+  "tagline": "A Scala project to calculate the value your GoodReads shelves using the GoodReads API in conjunction with online booksellers.",
+  "body": "GoodReads Valuator v1.0.0\r\n=========================\r\n\r\nContents\r\n--------\r\n1. Introduction\r\n2. Installation\r\n3. Usage\r\n\r\n\r\nIntroduction\r\n------------\r\n\r\nGoodReads Valuator is a simple command-line application that can be used\r\nto calculate the value of a GoodReads shelf. \r\n\r\nCalculating the value involves loading all Reviews associated with a\r\nShelf from GoodReads and then searching pricing providers for the \r\nISBNs associated with those reviews.\r\n\r\nThis tool was written to fulfill a personal need and thus the\r\npricing providers are currently limited to:\r\n\r\n* Loot (http://www.loot.co.za)\r\n* Amazon (https://www.amazon.com)\r\n\r\n\r\nInstallation\r\n------------\r\n\r\nHead over to https://github.com/OOPMan/goodreads-valuator/releases and\r\ndownload the relevant installation binary for your platform.\r\n\r\nIn the event one is unavailable, you can download and extract the\r\nuniversal zip file.\r\n\r\n\r\nUsage\r\n-----\r\n\r\nRun `bin/goodreads-valuator --help` to print usage instructions.\r\n",
+  "note": "Don't delete this file! It's used internally to help with page regeneration."
+}
