@@ -1,5 +1,7 @@
 name := """goodreads-valuator"""
 
+version := "1.0.0"
+
 mainClass in Compile := Some("com.github.oopman.goodreads.valuator.GoodreadsLibraryValueCalculator")
 
 scalaVersion := "2.11.8"
