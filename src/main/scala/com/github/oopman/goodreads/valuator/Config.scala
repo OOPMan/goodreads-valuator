@@ -3,13 +3,18 @@ package com.github.oopman.goodreads.valuator
 import scopt._
 
 case class Config(gooodReadsUserId: String = "", goodreadsAPIKey: String = "",
-                  shelf: String = "read", pageSize: String = "100",
-                  chunkSize: Int = 10)
+                  shelf: String = Config.defaultShelf, pageSize: String = Config.defaultPageSize,
+                  chunkSize: Int = Config.defaultChunkSize,
+                  providers: Seq[String] = Config.defaultProviders)
 
 object Config {
+  val defaultShelf = "read"
+  val defaultPageSize = "100"
+  val defaultChunkSize = 10
+  val defaultProviders = ISBNUtils.priceProviders.keys.toSeq
 
   val parser = new OptionParser[Config]("goodreadsValuator") {
-    head("goodreadsValuator", "0.1.0")
+    head("goodreadsValuator", "1.0.0")
 
     opt[Int]('u', "goodReadsUserId")
       .required()
@@ -26,21 +31,28 @@ object Config {
       }
 
     opt[String]('s', "shelf")
-      .text("Shelf to valuate. Defaults to read")
+      .text(s"Shelf to valuate. Defaults to $defaultShelf")
       .action { (value, config) =>
         config.copy(shelf = value)
       }
 
     opt[Int]('p', "pageSize")
-      .text("Page size value for GoodReads API calls. Defaults to 100")
+      .text(s"Page size value for GoodReads API calls. Defaults to $defaultPageSize")
       .action { (value, config) =>
         config.copy(pageSize = value.toString)
       }
 
     opt[Int]('c', "chunkSize")
-      .text("Maximum number of HTTP requests to perform in parallel")
+      .text(s"Maximum number of HTTP requests to perform in parallel. Defaults to $defaultChunkSize")
       .action { (value, config) =>
         config.copy(chunkSize = value)
+      }
+
+    opt[Seq[String]]('P', "providers")
+      .valueName("<provider1>,<provider2>...")
+      .text(s"Ordered list of pricing providers to use. Defaults to ${defaultProviders.mkString(",")}")
+      .action { (value, config) =>
+        config.copy(providers =  value)
       }
 
     help("help").text("Usage notes")
