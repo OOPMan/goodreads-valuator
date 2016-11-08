@@ -1,6 +1,6 @@
 package com.github.oopman.goodreads.valuator
 
-import com.typesafe.config._
+import com.github.oopman.goodreads.valuator.ISBNUtils.Provider
 import com.typesafe.scalalogging.Logger
 import dispatch.Defaults._
 import dispatch._
@@ -14,6 +14,70 @@ import slick.driver.H2Driver.api._
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
 import scala.xml.{NodeSeq, XML}
+
+object ISBNUtils {
+  val empty = Future.successful("")
+  val logger = Logger("com.github.oopman.goodreads.valuator.ISBNUntils")
+  val browser = JsoupBrowser()
+  type GetResponseFunction = (String, Req, String) => Future[String]
+  type Provider = (String, GetResponseFunction) => Future[Option[Money]]
+
+  /**
+    * TODO: Document
+    *
+    * @param isbn13
+    * @param getResponseFromCacheOrService
+    * @return
+    */
+  def getPriceForISBNFromLoot(isbn13: String,
+                              getResponseFromCacheOrService: GetResponseFunction) = {
+    val priceService = url("http://www.loot.co.za/search") <<? Map(
+      "offset" -> "0",
+      "cat" -> "b",
+      "terms" -> isbn13
+    )
+    val priceServiceResponse = getResponseFromCacheOrService(isbn13, priceService, "Loot")
+    val html = priceServiceResponse.map(browser.parseString)
+    val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
+    for (option <- potentialPrice) yield option match {
+      case Some(price) =>
+        logger.info(s"Loaded price for $isbn13 from Loot")
+        Some(Money.parse("ZAR" + price.tail))
+      case None =>
+        logger.warn(s"Failed to load price for $isbn13 from Loot")
+        throw new Exception("Could not obtain a price")
+    }
+  }
+
+  /**
+    * TODO: Document
+    *
+    * @param isbn13
+    * @return
+    */
+  def getPriceForISBNFromAmazon(isbn13: String,
+                                getResponseFromCacheOrService: GetResponseFunction) = {
+    val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
+      "field-keywords" -> isbn13
+    )
+    val priceServiceResponse = getResponseFromCacheOrService(isbn13, priceService, "Amazon")
+    val html = priceServiceResponse.fallbackTo(empty).map(browser.parseString)
+    val potentialPrice = for (document <- html) yield document >?> text("#result_0 .s-item-container span.a-color-price")
+      for (option <- potentialPrice) yield option match {
+      case Some(price) =>
+        logger.info(s"Loaded price for $isbn13 from Amazon")
+        Some(Money.parse("USD" + price.tail))
+      case None =>
+        logger.warn(s"Failed to load price for $isbn13 from Amazon")
+        throw new Exception("Could not obtain a price")
+    }
+  }
+
+  val priceProviders: Map[String, Provider] = Map(
+    "loot" -> getPriceForISBNFromLoot,
+    "amazon" -> getPriceForISBNFromAmazon
+  )
+}
 
 /**
   * Created by adamj on 2016/10/10.
@@ -116,71 +180,17 @@ class ISBNUtils(db: Database) {
     * TODO: Document
     *
     * @param isbn13
-    * @return
-    */
-  def getPriceForISBNFromLoot(isbn13: String) = {
-    // TODO: Cache response?
-    val priceService = url("http://www.loot.co.za/search") <<? Map(
-      "offset" -> "0",
-      "cat" -> "b",
-      "terms" -> isbn13
-    )
-    val priceServiceResponse = getResponseFromCacheOrService(isbn13, priceService, "Loot")
-    val html = priceServiceResponse.map(browser.parseString)
-    val potentialPrice = for (document <- html) yield document >?> text("div.productListing span.price del")
-    for (option <- potentialPrice) yield option match {
-      case Some(price) =>
-        logger.info(s"Loaded price for $isbn13 from Loot")
-        Some(Money.parse("ZAR" + price.tail))
-      case None =>
-        logger.warn(s"Failed to load price for $isbn13 from Loot")
-        throw new Exception("Could not obtain a price")
-    }
-  }
-
-  /**
-    * TODO: Document
-    *
-    * @param isbn13
-    * @return
-    */
-  def getPriceForISBNFromAmazon(isbn13: String) = {
-    // TODO: Cache response?
-    val priceService = url("https://www.amazon.com/s/ref=nb_sb_noss") <<? Map(
-      "field-keywords" -> isbn13
-    )
-    val priceServiceResponse = getResponseFromCacheOrService(isbn13, priceService, "Amazon")
-    val html = priceServiceResponse.fallbackTo(empty).map(browser.parseString)
-    val potentialPrice = for (document <- html) yield document >?> text("#result_0 .s-item-container span.a-color-price")
-      for (option <- potentialPrice) yield option match {
-      case Some(price) =>
-        logger.info(s"Loaded price for $isbn13 from Amazon")
-        Some(Money.parse("USD" + price.tail))
-      case None =>
-        logger.warn(s"Failed to load price for $isbn13 from Amazon")
-        throw new Exception("Could not obtain a price")
-    }
-  }
-
-  val priceProviders: List[(String) => Future[Option[Money]]] = List(
-    getPriceForISBNFromLoot, getPriceForISBNFromAmazon)
-
-  /**
-    * TODO: Document
-    *
-    * @param isbn13
     * @param providers
     * @return
     */
   def getPriceForISBN(isbn13: String,
-                      providers: List[(String) => Future[Option[Money]]] = priceProviders): Future[Option[Money]] = {
+                      providers: Seq[Provider]): Future[Option[Money]] = {
     providers match {
       case Nil =>
         logger.error(s"Failed to load a price for $isbn13 from available Providers")
         Future.successful(None)
       case provider :: remainingProviders =>
-        // TODO: This seems to be failing as its always falling back to the Amazon result
-        provider(isbn13) recoverWith {
+        provider(isbn13, getResponseFromCacheOrService) recoverWith {
           case ex => getPriceForISBN(isbn13, remainingProviders)
         }
     }
@@ -192,7 +202,8 @@ class ISBNUtils(db: Database) {
     * @param chunks
     * @return
     */
-  def getPricesForISBNChunks(chunks: List[IndexedSeq[String]]): Future[IndexedSeq[Option[Money]]] = {
+  def getPricesForISBNChunks(chunks: List[IndexedSeq[String]],
+                             providers: Seq[Provider]): Future[IndexedSeq[Option[Money]]] = {
     chunks match {
       case Nil =>
         logger.info("Done processing chunks")
@@ -202,9 +213,9 @@ class ISBNUtils(db: Database) {
         for {
           batch <- Future.traverse(chunk)(isbn13 => {
             logger.info(s"Attempting to obtain price for $isbn13")
-            getPriceForISBN(isbn13)
+            getPriceForISBN(isbn13, providers)
           })
-          nextBatch <- getPricesForISBNChunks(remainingChunks)
+          nextBatch <- getPricesForISBNChunks(remainingChunks, providers)
         } yield batch ++ nextBatch
     }
   }
