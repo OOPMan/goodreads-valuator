@@ -20,7 +20,7 @@ object GoodreadsLibraryValueCalculator extends App {
     * @return
     */
   def valuate(config: Config) = {
-//    import com.github.oopman.goodreads.valuator.ISBNUtils._
+    val providers = config.providers.collect(ISBNUtils.priceProviders)
     val isbnUtils = new ISBNUtils(db)
 
     val reviewPages = isbnUtils.getAllReviews(config)
@@ -49,7 +49,7 @@ object GoodreadsLibraryValueCalculator extends App {
       */
     val groupedISBNs = collectedISBNs.map(_.grouped(config.chunkSize).toList)
 
-    val prices = groupedISBNs.map(isbnUtils.getPricesForISBNChunks).flatMap(identity)
+    val prices = groupedISBNs.map(listOfSeqOfISBNs => isbnUtils.getPricesForISBNChunks(listOfSeqOfISBNs, providers)).flatMap(identity)
     val isbnsAndPrices = for {
       a <- collectedISBNs
       b <- prices
