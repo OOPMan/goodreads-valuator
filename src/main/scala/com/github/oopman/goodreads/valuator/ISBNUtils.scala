@@ -184,7 +184,7 @@ class ISBNUtils(db: Database) {
     * @return
     */
   def getPriceForISBN(isbn13: String,
-                      providers: Seq[Provider]): Future[Option[Money]] = {
+                      providers: List[Provider]): Future[Option[Money]] = {
     providers match {
       case Nil =>
         logger.error(s"Failed to load a price for $isbn13 from available Providers")
@@ -203,7 +203,7 @@ class ISBNUtils(db: Database) {
     * @return
     */
   def getPricesForISBNChunks(chunks: List[IndexedSeq[String]],
-                             providers: Seq[Provider]): Future[IndexedSeq[Option[Money]]] = {
+                             providers: List[Provider]): Future[IndexedSeq[Option[Money]]] = {
     chunks match {
       case Nil =>
         logger.info("Done processing chunks")

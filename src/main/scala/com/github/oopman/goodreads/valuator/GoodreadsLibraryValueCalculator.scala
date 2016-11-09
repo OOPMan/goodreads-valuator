@@ -20,7 +20,7 @@ object GoodreadsLibraryValueCalculator extends App {
     * @return
     */
   def valuate(config: Config) = {
-    val providers = config.providers.collect(ISBNUtils.priceProviders)
+    val providers = config.providers.collect(ISBNUtils.priceProviders).toList
     val isbnUtils = new ISBNUtils(db)
 
     val reviewPages = isbnUtils.getAllReviews(config)
@@ -67,7 +67,7 @@ object GoodreadsLibraryValueCalculator extends App {
       case _ => ""
     })
 
-    val ISBNsWithNoPrice = currencyToISBNsAndPrices.map(_.getOrElse("", IndexedSeq()).map(_._1).mkString(", "))
+    val ISBNsWithNoPrice = currencyToISBNsAndPrices.map(_.getOrElse("", IndexedSeq()).map(_._1))
 
     val currencyToSummedPrices = currencyToISBNsAndPrices.map(_.map {
       case ("", _) => ("", Money.zero(CurrencyUnit.USD))
@@ -75,12 +75,21 @@ object GoodreadsLibraryValueCalculator extends App {
         (key, value.flatMap(_._2).reduce(_.plus(_)))
     })
 
-    for (pricing <- currencyToSummedPrices; isbns <- ISBNsWithNoPrice) yield {
+    for {
+      pricing <- currencyToSummedPrices
+      isbns <- ISBNsWithNoPrice
+      isbnsToTitles <- isbnToTitle
+    } yield {
       logger.info("Pricing amounts")
       for ((currency, amount) <- pricing) {
         if (currency != "") logger.info(s"$amount")
       }
-      logger.info(s"ISBNs with no price: $isbns")
+      val titles = isbns.collect(isbnsToTitles)
+      val isbnsAndTitles = isbns zip titles
+      logger.info(s"ISBNs with no price:")
+      for (isbn <- isbns) {
+        logger.info(s"$isbn: ${isbnsToTitles(isbn)}")
+      }
       true
     }
   }
@@ -91,6 +100,7 @@ object GoodreadsLibraryValueCalculator extends App {
       logger.debug(s"GoodReads API Key: ${config.goodreadsAPIKey}")
       logger.debug(s"GoodReads Shelf: ${config.shelf}")
       logger.debug(s"Page Size: ${config.pageSize}")
+      logger.debug(s"Providers: ${config.providers.mkString(",")}")
       logger.info("Creating database tables")
       val init = db.run(DBIO.seq(httpResponse.schema.create)) recover {
         case _ =>
