@@ -25,14 +25,22 @@ object GoodreadsLibraryValueCalculator extends App {
 
     val reviewPages = isbnUtils.getAllReviews(config)
     // TODO: Find a way to clean this up
-    val reviewNodes = for (reviewPage <- reviewPages) yield (for (reviews <- reviewPage) yield reviews \\ "review").flatten
+    val allReviewNodes = for (reviewPage <- reviewPages) yield (for (reviews <- reviewPage) yield reviews \\ "review").flatten
+    val reviewNodes = for (reviews <- allReviewNodes) yield reviews.filter { review =>
+      val reviewId = (review \ "id").text
+      val bookId = (review \ "book" \ "id").text
+      val isbn13 = (review \\ "isbn13").text
+      val title = (review \\ "title").text
+      if (isbn13.length != 13) logger.info(s"Skipping $title (Book ID: $bookId) with invalid ISBN '$isbn13' for Review ID $reviewId")
+      isbn13.length == 13
+    }
 
     // TODO: Find a way to clean this up
     val isbnNodes = for (review <- reviewNodes) yield (for (reviewNode <- review) yield reviewNode \\ "isbn13").flatten
-    val collectedISBNs = isbnNodes.map { i => i.map { j => j.text } }
+    val collectedISBNs = isbnNodes.map(_.map(_.text))
     // TODO: Find a way to clean this up
     val titleNodes = for (review <- reviewNodes) yield (for (reviewNode <- review) yield reviewNode \\ "title").flatten
-    val collectedTitles = titleNodes.map { i => i.map { j => j.text } }
+    val collectedTitles = titleNodes.map(_.map(_.text))
 
     // TODO: Use this to output titles of unmatched ISBNs
     val isbnToTitle = for {
